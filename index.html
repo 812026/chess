@@ -77,14 +77,14 @@
   <script>
     const game = new Chess();
     let board = null;
+    let computerThinking = false;
 
     function onDragStart(source, piece) {
-      if (game.game_over()) return false;
+      if (game.game_over() || computerThinking) return false;
 
-      if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-          (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
-        return false;
-      }
+      // Only let the human move White pieces
+      if (piece.search(/^b/) !== -1) return false;
+      if (game.turn() !== 'w') return false;
     }
 
     function onDrop(source, target) {
@@ -97,10 +97,39 @@
       if (move === null) return 'snapback';
 
       updateStatus();
+      window.setTimeout(makeComputerMove, 450);
     }
 
     function onSnapEnd() {
       board.position(game.fen());
+    }
+
+    function makeComputerMove() {
+      if (game.game_over() || game.turn() !== 'b') return;
+
+      computerThinking = true;
+      updateStatus();
+
+      const moves = game.moves({ verbose: true });
+      if (moves.length === 0) {
+        computerThinking = false;
+        return;
+      }
+
+      // Prefer captures, then checks, otherwise random
+      let candidates = moves.filter(m => m.captured);
+      if (candidates.length === 0) {
+        candidates = moves.filter(m => m.san.includes('+') || m.san.includes('#'));
+      }
+      if (candidates.length === 0) {
+        candidates = moves;
+      }
+
+      const choice = candidates[Math.floor(Math.random() * candidates.length)];
+      game.move(choice);
+      board.position(game.fen());
+      computerThinking = false;
+      updateStatus();
     }
 
     function updateStatus() {
@@ -111,6 +140,8 @@
         status = `Checkmate! ${moveColor === 'White' ? 'Black' : 'White'} wins`;
       } else if (game.in_draw()) {
         status = 'Game drawn';
+      } else if (computerThinking) {
+        status = 'Black is thinking...';
       } else {
         status = moveColor + ' to move';
         if (game.in_check()) {
@@ -132,6 +163,7 @@
 
     document.getElementById('resetBtn').addEventListener('click', () => {
       game.reset();
+      computerThinking = false;
       board.start();
       updateStatus();
     });
