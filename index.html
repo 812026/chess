@@ -51,6 +51,14 @@
       color: #aaa;
       min-height: 24px;
     }
+
+    /* Grey & white board */
+    .white-1e1d7 {
+      background-color: #e8e8e8 !important;
+    }
+    .black-3c85d {
+      background-color: #5a5a5a !important;
+    }
   </style>
 </head>
 <body>
@@ -71,10 +79,8 @@
     let board = null;
 
     function onDragStart(source, piece) {
-      // do not pick up pieces if the game is over
       if (game.game_over()) return false;
 
-      // only pick up pieces for the side to move
       if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
           (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
         return false;
@@ -82,14 +88,12 @@
     }
 
     function onDrop(source, target) {
-      // see if the move is legal
       const move = game.move({
         from: source,
         to: target,
-        promotion: 'q' // always promote to queen for simplicity
+        promotion: 'q'
       });
 
-      // illegal move
       if (move === null) return 'snapback';
 
       updateStatus();
@@ -117,7 +121,6 @@
       document.getElementById('status').textContent = status;
     }
 
-    // Initialize the board
     board = Chessboard('board', {
       draggable: true,
       position: 'start',
@@ -127,7 +130,6 @@
       pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
 
-    // Reset button
     document.getElementById('resetBtn').addEventListener('click', () => {
       game.reset();
       board.start();
