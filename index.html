@@ -42,23 +42,43 @@
       border-radius: 8px;
       cursor: pointer;
       font-size: 15px;
-      transition: background 0.2s;
     }
     button:hover { background: #3a3a3a; }
     #status {
       margin-top: 16px;
-      font-size: 16px;
-      color: #aaa;
+      font-size: 18px;
+      color: #ddd;
       min-height: 24px;
+      font-weight: 600;
     }
+    #status.check { color: #ffcc66; }
+    #status.mate { color: #7dff9a; }
 
-    /* Grey & white board */
-    .white-1e1d7 {
-      background-color: #e8e8e8 !important;
+    .white-1e1d7 { background-color: #e8e8e8 !important; }
+    .black-3c85d { background-color: #5a5a5a !important; }
+    .highlight-legal { box-shadow: inset 0 0 0 4px rgba(80, 180, 80, 0.55); }
+    .highlight-last { box-shadow: inset 0 0 0 4px rgba(255, 210, 70, 0.7); }
+
+    #overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
     }
-    .black-3c85d {
-      background-color: #5a5a5a !important;
+    #overlay.show { display: flex; }
+    #overlay .box {
+      background: #1b1b1b;
+      border: 1px solid #444;
+      border-radius: 12px;
+      padding: 28px 32px;
+      text-align: center;
+      max-width: 90vw;
     }
+    #overlay h2 { margin-bottom: 10px; font-size: 28px; }
+    #overlay p { color: #bbb; margin-bottom: 18px; }
   </style>
 </head>
 <body>
@@ -70,6 +90,14 @@
   </div>
   <div id="status">White to move</div>
 
+  <div id="overlay">
+    <div class="box">
+      <h2 id="overlayTitle">Checkmate</h2>
+      <p id="overlayText"></p>
+      <button id="overlayReset">Play again</button>
+    </div>
+  </div>
+
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -78,16 +106,54 @@
     const game = new Chess();
     let board = null;
     let computerThinking = false;
+    let lastMove = null;
+
+    function beep(freq, ms) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        gain.gain.value = 0.06;
+        osc.start();
+        setTimeout(() => {
+          osc.stop();
+          ctx.close();
+        }, ms);
+      } catch (e) {}
+    }
+
+    function vibrate(pattern) {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    }
+
+    function removeHighlights() {
+      $('#board .square-55d63').removeClass('highlight-legal highlight-last');
+    }
+
+    function highlightLastMove() {
+      if (!lastMove) return;
+      $('#board .square-' + lastMove.from).addClass('highlight-last');
+      $('#board .square-' + lastMove.to).addClass('highlight-last');
+    }
 
     function onDragStart(source, piece) {
       if (game.game_over() || computerThinking) return false;
+      if (game.turn() !== 'w' || piece.search(/^b/) !== -1) return false;
 
-      // Only let the human move White pieces
-      if (piece.search(/^b/) !== -1) return false;
-      if (game.turn() !== 'w') return false;
+      removeHighlights();
+      highlightLastMove();
+      const moves = game.moves({ square: source, verbose: true });
+      moves.forEach(m => {
+        $('#board .square-' + m.to).addClass('highlight-legal');
+      });
     }
 
     function onDrop(source, target) {
+      removeHighlights();
+
       const move = game.move({
         from: source,
         to: target,
@@ -96,60 +162,106 @@
 
       if (move === null) return 'snapback';
 
+      lastMove = { from: source, to: target };
       updateStatus();
-      window.setTimeout(makeComputerMove, 450);
+
+      if (!game.game_over()) {
+        computerThinking = true;
+        window.setTimeout(makeComputerMove, 500);
+      }
     }
 
     function onSnapEnd() {
       board.position(game.fen());
+      highlightLastMove();
     }
 
     function makeComputerMove() {
-      if (game.game_over() || game.turn() !== 'b') return;
-
-      computerThinking = true;
-      updateStatus();
-
-      const moves = game.moves({ verbose: true });
-      if (moves.length === 0) {
+      if (game.game_over() || game.turn() !== 'b') {
         computerThinking = false;
+        updateStatus();
         return;
       }
 
-      // Prefer captures, then checks, otherwise random
+      const moves = game.moves({ verbose: true });
+      if (!moves.length) {
+        computerThinking = false;
+        updateStatus();
+        return;
+      }
+
       let candidates = moves.filter(m => m.captured);
-      if (candidates.length === 0) {
+      if (!candidates.length) {
         candidates = moves.filter(m => m.san.includes('+') || m.san.includes('#'));
       }
-      if (candidates.length === 0) {
-        candidates = moves;
-      }
+      if (!candidates.length) candidates = moves;
 
       const choice = candidates[Math.floor(Math.random() * candidates.length)];
       game.move(choice);
+      lastMove = { from: choice.from, to: choice.to };
       board.position(game.fen());
       computerThinking = false;
+      highlightLastMove();
       updateStatus();
     }
 
+    function showOverlay(title, text) {
+      document.getElementById('overlayTitle').textContent = title;
+      document.getElementById('overlayText').textContent = text;
+      document.getElementById('overlay').classList.add('show');
+    }
+
+    function hideOverlay() {
+      document.getElementById('overlay').classList.remove('show');
+    }
+
     function updateStatus() {
-      let status = '';
-      const moveColor = game.turn() === 'w' ? 'White' : 'Black';
+      const el = document.getElementById('status');
+      el.className = '';
 
       if (game.in_checkmate()) {
-        status = `Checkmate! ${moveColor === 'White' ? 'Black' : 'White'} wins`;
-      } else if (game.in_draw()) {
-        status = 'Game drawn';
-      } else if (computerThinking) {
-        status = 'Black is thinking...';
-      } else {
-        status = moveColor + ' to move';
-        if (game.in_check()) {
-          status += ' • Check!';
-        }
+        const winner = game.turn() === 'w' ? 'Black' : 'White';
+        el.textContent = 'Checkmate — ' + winner + ' wins';
+        el.classList.add('mate');
+        showOverlay('Checkmate', winner + ' wins');
+        beep(880, 120);
+        setTimeout(() => beep(1175, 180), 140);
+        vibrate([180, 80, 180, 80, 240]);
+        return;
       }
 
-      document.getElementById('status').textContent = status;
+      if (game.in_draw()) {
+        el.textContent = 'Draw';
+        showOverlay('Draw', 'The game is drawn');
+        beep(300, 250);
+        vibrate([120, 80, 120]);
+        return;
+      }
+
+      if (computerThinking) {
+        el.textContent = 'Black is thinking...';
+        return;
+      }
+
+      const side = game.turn() === 'w' ? 'White' : 'Black';
+      if (game.in_check()) {
+        el.textContent = side + ' to move — Check!';
+        el.classList.add('check');
+        beep(660, 90);
+        vibrate(70);
+      } else {
+        el.textContent = side + ' to move';
+      }
+    }
+
+    function resetGame() {
+      game.reset();
+      computerThinking = false;
+      lastMove = null;
+      hideOverlay();
+      removeHighlights();
+      board.start();
+      updateStatus();
     }
 
     board = Chessboard('board', {
@@ -161,12 +273,8 @@
       pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
 
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      game.reset();
-      computerThinking = false;
-      board.start();
-      updateStatus();
-    });
+    document.getElementById('resetBtn').addEventListener('click', resetGame);
+    document.getElementById('overlayReset').addEventListener('click', resetGame);
 
     updateStatus();
   </script>
